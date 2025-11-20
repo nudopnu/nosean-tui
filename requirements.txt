@@ -1,0 +1,2 @@
+PyYAML==6.0.3
+textual==6.6.0
