@@ -35,8 +35,9 @@ class Vault:
 
 # for testing only
 if __name__ == "__main__":
-    VAULT_PATH = r"C:\Users\Peter\code\work\xr-lab\terminology"
+    VAULT_PATH = r"C:\Users\peter\code\work\hst2\terminology"
     vault = Vault(path=VAULT_PATH)
     entries = vault.get_entries()
-    print(entries[1].metadata)
+    for e in entries:
+        print(e.name)
 
