@@ -4,6 +4,7 @@ from textual.app import App
 from textual.widgets import Label, Collapsible, Markdown
 from textual.color import Color
 from textual.events import Key
+from string import punctuation
 
 from nosean.vault import Entry
 from nosean.fuzzy_search import FuzzySearch
@@ -22,6 +23,7 @@ class MyApp(App):
         self.entries: list[Entry] = entries
         self.fuzzy_search = FuzzySearch([e.name for e in entries])
         self.search_buffer = ""
+        self.counter = 0
 
     def compose(self):
         self.screen.styles.background = Color(0, 0, 0, 0)
@@ -42,7 +44,8 @@ class MyApp(App):
                 yield md
 
     def _on_key(self, event: Key):
-        self.lbl_debug.update(event.key)
+        self.lbl_debug.update(f"{event.key}_{self.counter}")
+        self.counter += 1
         focused_widget = self.screen.focused
         if event.key in "XQ":
             sys.exit()
@@ -64,7 +67,7 @@ class MyApp(App):
             focused_widget.action_toggle_collapsible()
             return
         
-        if c := event.character:
+        if (c := event.character) and event.is_printable and c not in punctuation:
             self.search_buffer += c
         self.lbl_search.update(self.search_buffer)
         entry_names = self.fuzzy_search.fuzzy_search(self.search_buffer)
@@ -72,8 +75,3 @@ class MyApp(App):
             collapsible.title = name + f"{len(entry_names)}"
         for i in range(len(entry_names), 5):
             self.collapsibles[i].title = ""
-
-
-
-
-            
