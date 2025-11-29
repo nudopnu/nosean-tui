@@ -25,14 +25,30 @@ class MarkdownParser:
         self.sections: dict[str, list[Token]] = {}
         self.current_level = 1
 
+    def __search_sections_rescursive(self, token: Token):
+        key = ".".join(self.heading[i + 1] for i in range(self.current_level) if (i + 1) in self.heading)
+        tokens = self.sections.get(key, [])
+        match(token):
+            case Paragraph():
+                for child in token.children:
+                    self.__search_sections_rescursive(child)
+            case Heading():
+                self.current_level = token.level
+                title = ''.join(c.content for c in token.children if hasattr(c, 'content'))
+                self.heading[token.level] = title
+            case _:
+                tokens.append(token)
+                self.sections[key] = tokens
+
     def parse(self) -> dict[str, Section]:
         for token in Document(self.content).children:
-            self.__extract_sections(token)
+            self.__search_sections_rescursive(token)
         renderer = MarkdownRenderer()
 
         typed_sections: dict[str, Section] = {}
         for section_name, tokens in self.sections.items():
 
+            # Put placeholders before parsing html
             content = ""
             code_placeholders = {}
             i = 0
@@ -67,7 +83,7 @@ class MarkdownParser:
                     case _:
                         content += render
 
-            # post-processing
+            # parsing html
             bs = BeautifulSoup(f"<root>{content}</root>", "html.parser")
             for node in bs.root.contents:
                 if node.name == "details":
@@ -84,21 +100,6 @@ class MarkdownParser:
                     else:
                         typed_sections[section_name] = {"type": "text", "body": text}
         return typed_sections
-
-    def __extract_sections(self, token: Token):
-        key = ".".join(self.heading[i + 1] for i in range(self.current_level) if (i + 1) in self.heading)
-        tokens = self.sections.get(key, [])
-        match(token):
-            case Paragraph():
-                for child in token.children:
-                    self.__extract_sections(child)
-            case Heading():
-                self.current_level = token.level
-                title = ''.join(c.content for c in token.children if hasattr(c, 'content'))
-                self.heading[token.level] = title
-            case _:
-                tokens.append(token)
-                self.sections[key] = tokens
 
 if __name__ == "__main__":
     parser = MarkdownParser("./data/python.md")
