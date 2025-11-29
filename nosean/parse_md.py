@@ -1,12 +1,18 @@
 import os
 import pathlib
+from typing import TypedDict, Optional, Literal
 
 from mistletoe import Document
 from mistletoe.token import Token
 from mistletoe.markdown_renderer import MarkdownRenderer
-from mistletoe.block_token import Paragraph, Heading, CodeFence, List, BlockCode
+from mistletoe.block_token import Paragraph, Heading, CodeFence, List, BlockCode, Table
 from mistletoe.span_token import InlineCode
 from bs4 import BeautifulSoup
+
+
+class Section(TypedDict):
+    type: Literal["text", "summary"]
+    body: str
 
 
 class MarkdownParser:
@@ -19,12 +25,12 @@ class MarkdownParser:
         self.sections: dict[str, list[Token]] = {}
         self.current_level = 1
 
-    def parse(self):
+    def parse(self) -> dict[str, Section]:
         for token in Document(self.content).children:
             self.__extract_sections(token)
         renderer = MarkdownRenderer()
 
-        typed_sections: dict[str, dict] = {}
+        typed_sections: dict[str, Section] = {}
         for section_name, tokens in self.sections.items():
 
             content = ""
@@ -36,17 +42,22 @@ class MarkdownParser:
                     case CodeFence():
                         key = f"p{i}"
                         code_placeholders[key] = render
-                        content += f"${{{key}}}\n"
+                        content += f"{{{key}}}\n"
                         i += 1
                     case BlockCode():
                         key = f"p{i}"
                         code_placeholders[key] = render
-                        content += f"${{{key}}}\n"
+                        content += f"{{{key}}}\n"
                         i += 1
                     case List():
                         key = f"p{i}"
                         code_placeholders[key] = render
-                        content += f"${{{key}}}\n"
+                        content += f"{{{key}}}\n"
+                        i += 1
+                    case Table():
+                        key = f"p{i}"
+                        code_placeholders[key] = render
+                        content += f"{{{key}}}\n"
                         i += 1
                     case InlineCode():
                         key = f"p{i}"
@@ -58,24 +69,24 @@ class MarkdownParser:
 
             # post-processing
             bs = BeautifulSoup(f"<root>{content}</root>", "html.parser")
-            result = []
             for node in bs.root.contents:
                 if node.name == "details":
                     summary = node.summary.get_text(strip=True)
                     summary = summary.format(**code_placeholders).strip().replace("\n", "")
                     body = "".join(str(c) for c in node.contents if c.name != "summary")
-                    result.append({"type": "details", "summary": summary, "body": body})
+                    body = body.format(**code_placeholders)
                     key = f"{section_name}.{summary}"
-                    typed_sections[key] = body
+                    typed_sections[key] = {"type": "details", "body": body}
                 else:
                     text = str(node).strip().format(**code_placeholders)
-                    if text:
-                        result.append({"type": "text", "body": text})
-                    typed_sections[section_name] = typed_sections.get(section_name, "") + text
+                    if section_name in typed_sections:
+                        typed_sections[section_name]["body"] += text
+                    else:
+                        typed_sections[section_name] = {"type": "text", "body": text}
         return typed_sections
 
     def __extract_sections(self, token: Token):
-        key = ".".join(self.heading[i + 1] for i in range(self.current_level))
+        key = ".".join(self.heading[i + 1] for i in range(self.current_level) if (i + 1) in self.heading)
         tokens = self.sections.get(key, [])
         match(token):
             case Paragraph():
@@ -90,8 +101,10 @@ class MarkdownParser:
                 self.sections[key] = tokens
 
 if __name__ == "__main__":
-    parser = MarkdownParser("./data/docker.md")
+    parser = MarkdownParser("./data/python.md")
     typed_sections = parser.parse()
                 
     for k in typed_sections:
         print(k)
+    
+    print(typed_sections["Python.PyQT6"]["body"])
