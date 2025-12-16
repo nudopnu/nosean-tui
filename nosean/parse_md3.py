@@ -10,7 +10,7 @@ class Token(ABC):
 
     @classmethod
     @abstractmethod
-    def start(cls, line: str) -> tuple[int, dict] | None:
+    def start(cls, line: str) -> tuple[int, int, dict] | None:
         ...
     
 tokens: dict[str, type[Token]] = {}
@@ -21,6 +21,7 @@ def token(name: str, inner_tokens="*", only_after=None):
     def cls_decorator(cls: type):
         tokens[name] = cls
         allowed_inner_tokens[cls] = inner_tokens
+        # TODO: find a solution
         if only_after:
             restrictions[cls] = lambda tokens: only_after in tokens
         return cls
@@ -41,7 +42,7 @@ class Heading(Token):
                 "level": end - start,
                 "raw": line
             }
-            return 0, attrs
+            return 0, 0, attrs
 
 @token("html_start")
 class HtmlBlockStart(Token):
@@ -50,7 +51,7 @@ class HtmlBlockStart(Token):
     
     @classmethod
     def start(cls, line):
-        match = cls.pattern.match(line)
+        match = cls.pattern.search(line)
         if match:
             tagname = match.group(0)[1:-1]
             start, end = match.span(0)
@@ -59,7 +60,7 @@ class HtmlBlockStart(Token):
                 "tagname": tagname,
                 "raw": raw,
             }
-            return end, attrs
+            return start, end, attrs
     
 @token("html_end", only_after="html_start")
 class HtmlBlockEnd(Token):
@@ -77,7 +78,7 @@ class HtmlBlockEnd(Token):
                 "tagname": tagname,
                 "raw": raw,
             }
-            return end, attrs
+            return start, end, attrs
 
 @token("code_start")
 class CodeStart(Token):
@@ -93,7 +94,7 @@ class CodeStart(Token):
                 "language": language,
                 "raw": line,
             }
-            return 0, attrs
+            return 0, 0, attrs
 
 @token("code_end")
 class CodeEnd(Token):
@@ -103,8 +104,9 @@ class CodeEnd(Token):
     @classmethod
     def start(cls, line):
         match = cls.pattern.match(line)
+        attrs = {"raw": line}
         if match:
-            return 0, {"raw": line}
+            return 0, 0, attrs
 
 class Tokenizer:
 
@@ -125,9 +127,11 @@ class Tokenizer:
             stripped = line[self.offset:].rstrip()
             result = self.try_detect_token_start(stripped)
             if result:
-                offset, token = result
+                start, end, token = result
+                if start > 0:
+                    self.current_literal += stripped[:start]
                 self._add(token)
-                self.offset += offset
+                self.offset += end
             else:
                 self.current_literal += f"{stripped}\n"
                 self.offset += len(stripped)
@@ -142,17 +146,17 @@ class Tokenizer:
         return self.result
     
     def try_detect_token_start(self, line: str):
-        possible_tokens: dict[str, dict] = {}
+        possible_tokens_by_start: dict[int, tuple[int, dict]] = {}
         for name, Tokenizer in self.allowed_tokens:
             result = Tokenizer.start(line)
             if result:
                 self.allowed_tokens = self.get_allowed_tokens_by_class(Tokenizer)
-                offset, attrs = result
+                start, end, attrs = result
                 token = {"token": name} | (attrs or {})
-                possible_tokens[offset] = token
-        if possible_tokens:
-            min_offset = min(k for k in possible_tokens)
-            return min_offset, possible_tokens[min_offset]
+                possible_tokens_by_start[start] = end, token
+        if possible_tokens_by_start:
+            min_offset = min(k for k in possible_tokens_by_start)
+            return min_offset, *possible_tokens_by_start[min_offset]
     
     def _add(self, thing: Token):
         if self.current_literal:
