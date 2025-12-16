@@ -70,6 +70,7 @@ class MyApp(App):
         if (c := event.character) and event.is_printable and c not in punctuation:
             self.search_buffer += c
         self.lbl_search.update(self.search_buffer)
+
         entry_names = self.fuzzy_search.fuzzy_search(self.search_buffer)
         for name, collapsible in zip(entry_names, self.collapsibles):
             collapsible.title = name + f"{len(entry_names)}"

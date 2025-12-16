@@ -5,6 +5,7 @@ from typing import TypedDict, Optional, Literal
 from mistletoe import Document
 from mistletoe.token import Token
 from mistletoe.markdown_renderer import MarkdownRenderer
+from mistletoe.html_renderer import HTMLRenderer
 from mistletoe.block_token import Paragraph, Heading, CodeFence, List, BlockCode, Table
 from mistletoe.span_token import InlineCode
 from bs4 import BeautifulSoup
@@ -15,20 +16,25 @@ class Section(TypedDict):
     body: str
 
 
+class OperationException(Exception):
+    def __init__(self, operation: str, context: dict):
+        self.operation = operation
+        self.context = context
 class MarkdownParser:
 
     def __init__(self, path: str):
         p = pathlib.Path(path)
-        name = os.path.splitext(p.name)[0].title()
+        self.name = os.path.splitext(p.name)[0].title()
         self.content = p.read_text(encoding="utf8")
-        self.heading: dict[int, str] = { 1: name }
+        self.heading: dict[int, str] = { 1: self.name }
         self.sections: dict[str, list[Token]] = {}
         self.current_level = 1
+        self.renderer = MarkdownRenderer()
 
     def __search_sections_rescursive(self, token: Token):
         key = ".".join(self.heading[i + 1] for i in range(self.current_level) if (i + 1) in self.heading)
         tokens = self.sections.get(key, [])
-        match(token):
+        match token:
             case Paragraph():
                 for child in token.children:
                     self.__search_sections_rescursive(child)
@@ -39,11 +45,11 @@ class MarkdownParser:
             case _:
                 tokens.append(token)
                 self.sections[key] = tokens
-
+    
     def parse(self) -> dict[str, Section]:
+        x = HTMLRenderer()
         for token in Document(self.content).children:
             self.__search_sections_rescursive(token)
-        renderer = MarkdownRenderer()
 
         typed_sections: dict[str, Section] = {}
         for section_name, tokens in self.sections.items():
@@ -53,8 +59,8 @@ class MarkdownParser:
             code_placeholders = {}
             i = 0
             for token in tokens:
-                render = renderer.render(token)
-                match(token):
+                render = self.renderer.render(token)
+                match token:
                     case CodeFence():
                         key = f"p{i}"
                         code_placeholders[key] = render
@@ -90,6 +96,9 @@ class MarkdownParser:
                     summary = node.summary.get_text(strip=True)
                     summary = summary.format(**code_placeholders).strip().replace("\n", "")
                     body = "".join(str(c) for c in node.contents if c.name != "summary")
+                    print(body)
+                    print("*"*20)
+                    print(code_placeholders)
                     body = body.format(**code_placeholders)
                     key = f"{section_name}.{summary}"
                     typed_sections[key] = {"type": "details", "body": body}

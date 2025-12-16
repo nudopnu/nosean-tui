@@ -1,9 +1,10 @@
 import argparse
 
 from nosean.app import MyApp
-from nosean.vault import Vault
+from nosean.notion import NotionVault
+from nosean.vault import Entry
 
-VAULT_PATH = r"C:\Users\peter\code\work\hst2\terminology"
+VAULT_PATH = "data/"
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -12,6 +13,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    vault = Vault(path=args.vault_path)
-    app = MyApp(entries=vault.get_entries())
+    vault = NotionVault(path=args.vault_path)
+    entries = vault.get_entries()
+    entries = [Entry(name, value["body"], {}) for name, value in entries.items()]
+    app = MyApp(entries=entries)
     app.run()
