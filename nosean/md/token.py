@@ -1,7 +1,6 @@
 import re
 import fnmatch
 from functools import cache
-from typing import TypedDict
 from abc import ABC, abstractmethod
 
 

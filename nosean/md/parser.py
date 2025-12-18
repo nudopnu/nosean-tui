@@ -6,26 +6,27 @@ from .tokenizer import Tokenizer, TokenDict, ContainerTokenDict
 class Parser:
 
     def __init__(self, tokens: list[TokenDict]):
+        self.tokens = tokens
+    
+    def ast(self):
         root = {"token": "root", "children": []}
-
         parents = []
-        tmp = root["children"]
+        tmp: list = root["children"]
         for tok in tokens:
-            
-            if "container_id" in tok:
-                tok: ContainerTokenDict = tok
-                if tok["start"]:
-                    tmp.append(tok)
-                    parents.append(tmp)
-                    tok["children"] = []
-                    tmp = tok["children"]
-                else:
-                    tmp = parents.pop()
-                del tok["container_id"]
-                del tok["start"]
-            else:
+            if "container_id" not in tok:
                 tmp.append(tok)
-        print(json.dumps(root))
+                continue
+            tok: ContainerTokenDict = tok
+            if not tok["start"]:
+                tmp = parents.pop()
+                continue
+            tmp.append(tok)
+            parents.append(tmp)
+            tok["children"] = []
+            del tok["container_id"]
+            del tok["start"]
+            tmp = tok["children"]
+        return root
 
 
 if __name__ == "__main__":
@@ -44,3 +45,4 @@ abc
     # sample = Path("data/bash.md").read_text(encoding="utf8")
     tokens = Tokenizer().tok(sample)
     p = Parser(tokens)
+    print(json.dumps(p.ast()))
