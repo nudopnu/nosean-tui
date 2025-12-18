@@ -1,27 +1,58 @@
-from pathlib import Path
 import re
+import fnmatch
+from pathlib import Path
 from abc import ABC, abstractmethod
 from functools import cache
 from typing import TypedDict
-import fnmatch
+
 
 class TokenDict(TypedDict):
     token: str
 
+
 class ContainerTokenDict(TokenDict):
     container_id: int
     start: bool
+
 
 class Token(ABC):
 
     _token_name = "None"
     """The name that gets assigned by the @token decorator"""
 
+    _allowed_inner_token = "*"
+    """A pattern to match against all token 
+    names that gets assigned by the @token decorator"""
+
+    _token_registry: dict[str, type["Token"]] = {}
+    """The registry of all tokens that get registered by the @token decorator"""
+
     @classmethod
     @abstractmethod
     def start(cls, line: str) -> tuple[int, int, dict] | None:
         ...
     
+    @classmethod
+    def by_name(cls, name: str):
+        return cls._token_registry[name]
+    
+    @classmethod
+    @cache
+    def by_pattern(cls, pattern: str):
+        if not pattern:
+            return []
+        result: list[type[Token]] = []
+        for key, TokenClass in cls._token_registry.items():
+            if fnmatch.fnmatch(key, cls._allowed_inner_token):
+                result.append(TokenClass)
+        return result
+
+    @classmethod
+    @cache
+    def allowed_inner_tokens(cls) -> list[type["Token"]]:
+        return cls.by_pattern(cls._allowed_inner_token)
+
+
 class ContainerToken(Token):
 
     @classmethod
@@ -29,19 +60,15 @@ class ContainerToken(Token):
     def end(cls, line: str) -> tuple[int, int, dict] | None:
         ...
 
-token_classes: dict[str, type[Token]] = {}
-allowed_inner_tokens: dict[type[Token], str] = {}
 
 def token(name: str, inner_tokens="*"):
     def cls_decorator(cls: type[Token]):
-        token_classes[name] = cls
-        allowed_inner_tokens[cls] = inner_tokens
+        Token._token_registry[name] = cls
         cls._token_name = name
+        cls._allowed_inner_token = inner_tokens
         return cls
     return cls_decorator
 
-def get_token_by_name(name: str) -> type[Token]:
-    return token_classes[name]
 
 @token("heading")
 class Heading(Token):
@@ -118,12 +145,13 @@ class CodeStart(ContainerToken):
 
 class Tokenizer:
 
-    def __init__(self):
+    def __init__(self, allowed_tokens_by_pattern="*"):
+        self.allowed_tokens_by_pattern = allowed_tokens_by_pattern
         self._setup()
 
     def _setup(self):
         self.result = []
-        self.allowed_tokens = self.get_allowed_tokens("*")
+        self.allowed_tokens = Token.by_pattern(self.allowed_tokens_by_pattern)
         self.open_container_tokens: list[TokenDict] = []
         self.cid = 0
         self.offset = 0
@@ -142,14 +170,14 @@ class Tokenizer:
                 if "container_id" in token:
                     if token["start"]:
                         self.open_container_tokens.append(token)
-                        self.allowed_tokens = self.get_allowed_tokens(allowed_inner_tokens[get_token_by_name(token["token"])])
+                        self.allowed_tokens = Token.by_name(token["token"]).allowed_inner_tokens()
                     else:
                         self.open_container_tokens.pop()
                         if self.open_container_tokens:
                             name = self.open_container_tokens[-1]["token"]
-                            self.allowed_tokens = self.get_allowed_tokens(allowed_inner_tokens[get_token_by_name(name)])
+                            self.allowed_tokens = Token.by_name(name).allowed_inner_tokens()
                         else:
-                            self.allowed_tokens = self.get_allowed_tokens("*")
+                            self.allowed_tokens = Token.by_pattern(self.allowed_tokens_by_pattern)
                 if start > 0:
                     self.current_literal += stripped[:start]
                 self._add(token)
@@ -185,10 +213,10 @@ class Tokenizer:
         tokens_by_start: dict[int, tuple[int, TokenDict]] = {}
         for token_dict in self.open_container_tokens:
             token_name = token_dict["token"]
-            Token: type[ContainerToken] = get_token_by_name(token_name)
-            if Token not in self.allowed_tokens:
+            TokenType: type[ContainerToken] = Token.by_name(token_name)
+            if TokenType not in self.allowed_tokens:
                 continue
-            result = Token.end(line)
+            result = TokenType.end(line)
             if result:
                 cid = token_dict["container_id"]
                 start, end, attrs = result
@@ -202,16 +230,6 @@ class Tokenizer:
             self.current_literal = ""
         if thing is not None:
             self.result.append(thing)
-
-    @cache
-    def get_allowed_tokens(self, pattern: str | None) -> list[type[Token]]:
-        if not pattern:
-            return []
-        result: list[type[Token]] = []
-        for key in token_classes:
-            if fnmatch.fnmatch(key, pattern):
-                result.append(token_classes[key])
-        return result
 
 sample = """
 abc
