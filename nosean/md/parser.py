@@ -63,6 +63,7 @@ class Parser:
                     title = child.token.attributes["title"]
                     path = ["" if idx >= len(path) else path[idx] for idx in range(level + 1)]
                     path[level] = title
+                    print(path)
                 elif is_node_tag(child, "details"):
                     content = ""
                     title = "?"
@@ -71,7 +72,8 @@ class Parser:
                             title = "".join(x.get_raw() for x in sub_child.children).strip()
                         else:
                             content += sub_child.get_raw().strip()
-                    result[title] = content
+                    path_str = ".".join(path)
+                    result[title] = KnowledgeItem(title, content, path_str)
         traverse(root)
         return result
 
@@ -88,9 +90,9 @@ abc
 
 # test
     """
-    sample = Path("data/bash.md").read_text(encoding="utf8")
+    sample = Path("data/python.md").read_text(encoding="utf8")
     tokens = Tokenizer().tok(sample)
     p = Parser(tokens)
     # print(json.dumps(p.ast()))
-    for title, content in p.knowledge_items().items():
-        print(title)
+    for title, item in p.knowledge_items().items():
+        print(f"{item.path:<30}: {title}")
