@@ -1,14 +1,23 @@
 from pathlib import Path
 from functools import cache
 from typing import TypedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .tokenizer import Tokenizer, Token, ContainerToken
 
-class TokenNode(TypedDict):
-    token: str
-    children: list["TokenNode"]
+@dataclass
+class TokenNode:
+    token: Token | None
+    children: list["TokenNode"] = field(default_factory=list)
 
+    def get_raw(self):
+        raw = self.token.attributes["raw"]
+        if not isinstance(self.token, ContainerToken):
+            return raw
+        for child in self.children:
+            raw += child.get_raw()
+        return raw
+        
 @dataclass
 class KnowledgeItem:
     title: str
@@ -22,23 +31,20 @@ class Parser:
     
     @cache
     def ast(self):
-        root: TokenNode = {"token": "root", "children": []}
+        root = TokenNode(None)
         parents = []
-        tmp: list = root["children"]
-        for tok in tokens:
-            if "container_id" not in tok:
-                tmp.append(tok)
+        tmp: list = root.children
+        for tok in self.tokens:
+            token_node = TokenNode(tok)
+            if not isinstance(tok, ContainerToken):
+                tmp.append(token_node)
                 continue
-            tok: ContainerToken = tok
-            if not tok["start"]:
+            if not tok.is_start:
                 tmp = parents.pop()
                 continue
-            tmp.append(tok)
+            tmp.append(token_node)
             parents.append(tmp)
-            tok["children"] = []
-            del tok["container_id"]
-            del tok["start"]
-            tmp = tok["children"]
+            tmp = token_node.children
         return root
     
     def knowledge_items(self):
@@ -47,32 +53,24 @@ class Parser:
         result: dict[str, KnowledgeItem] = {}
         
         def is_node_tag(node: TokenNode, tag: str):
-            return node["token"] == "html" and node["tagname"] == tag
+            return node.token.name == "html" and node.token.attributes["tagname"] == tag
         
-        def get_raw(node: TokenNode):
-            raw: str = node["raw"]
-            if "children" not in node:
-                return raw
-            for child in node["children"]:
-                raw += get_raw(child)
-            return raw
-
         def traverse(token: TokenNode):
             nonlocal path
-            for child in token["children"]:
-                if child["token"] == "heading":
-                    level = child["level"]
-                    title = child["title"]
+            for child in token.children:
+                if child.token.name == "heading":
+                    level = child.token.attributes["level"]
+                    title = child.token.attributes["title"]
                     path = ["" if idx >= len(path) else path[idx] for idx in range(level + 1)]
                     path[level] = title
                 elif is_node_tag(child, "details"):
                     content = ""
                     title = "?"
-                    for sub_child in child["children"]:
+                    for sub_child in child.children:
                         if is_node_tag(sub_child, "summary"):
-                            title = "".join(get_raw(x) for x in sub_child["children"]).strip()
+                            title = "".join(x.get_raw() for x in sub_child.children).strip()
                         else:
-                            content += get_raw(sub_child).strip()
+                            content += sub_child.get_raw().strip()
                     result[title] = content
         traverse(root)
         return result

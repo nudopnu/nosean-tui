@@ -1,15 +1,4 @@
-from typing import TypedDict
-
-from .token import Token, ContainerToken
-
-
-class TokenDict(TypedDict):
-    token: str
-
-
-class ContainerTokenDict(TokenDict):
-    container_id: int
-    start: bool
+from .token import Token, ContainerToken, Occurence, Literal
 
 
 class Tokenizer:
@@ -21,7 +10,7 @@ class Tokenizer:
     def _setup(self):
         self.result = []
         self.allowed_tokens = Token.by_pattern(self.allowed_tokens_by_pattern)
-        self.open_container_tokens: list[TokenDict] = []
+        self.open_container_tokens: list[ContainerToken] = []
         self.cid = 0
         self.offset = 0
         self.current_literal = ""
@@ -35,22 +24,22 @@ class Tokenizer:
             tokens = self._get_token_starts(idx, stripped) | self._get_token_ends(idx, stripped)
             if tokens:
                 start = min(s for s in tokens)
-                end, token = tokens[start]
-                if "container_id" in token:
-                    if token["start"]:
+                token = tokens[start]
+                if isinstance(token, ContainerToken):
+                    if token.is_start:
                         self.open_container_tokens.append(token)
-                        self.allowed_tokens = Token.by_name(token["token"]).inner_tokens()
+                        self.allowed_tokens = token.__class__.inner_tokens()
                     else:
                         self.open_container_tokens.pop()
                         if self.open_container_tokens:
-                            name = self.open_container_tokens[-1]["token"]
-                            self.allowed_tokens = Token.by_name(name).inner_tokens()
+                            previous_container_token = self.open_container_tokens[-1]
+                            self.allowed_tokens = previous_container_token.__class__.inner_tokens()
                         else:
                             self.allowed_tokens = Token.by_pattern(self.allowed_tokens_by_pattern)
                 if start > 0:
                     self.current_literal += stripped[:start]
-                self._add(token)
-                self.offset += end
+                self._add(token, token.occurence)
+                self.offset += token.occurence.end
             else:
                 self.current_literal += f"{stripped}\n"
                 self.offset += len(stripped)
@@ -61,41 +50,43 @@ class Tokenizer:
                 idx, line = next(lines)
             except StopIteration:
                 break
-        self._add(None)
+        self._add(None, Occurence(idx, 0, self.offset))
         return self.result
     
-    def _get_token_starts(self, idx: int, line: str) -> dict[int, tuple[int, TokenDict]]:
-        tokens_by_start: dict[int, tuple[int, dict]] = {}
-        for Token in self.allowed_tokens:
-            token_name = Token._token_name
-            result = Token.start(line)
+    def _get_token_starts(self, idx: int, line: str) -> dict[int, Token]:
+        tokens_by_start: dict[int, Token] = {}
+        for Tok in self.allowed_tokens:
+            token_name = Tok._token_name
+            result = Tok.start(idx, line)
             if result:
-                start, end, attrs = result
-                token: TokenDict = {"token": token_name} | (attrs or {})
-                if issubclass(Token, ContainerToken):
+                occurence, attrs = result
+                if issubclass(Tok, ContainerToken):
                     self.cid += 1
-                    token |= {"container_id": self.cid, "start": True}
-                tokens_by_start[start] = end, token
+                    token = Tok(token_name, occurence, attrs, self.cid)
+                else:
+                    token = Tok(token_name, occurence, attrs)
+                tokens_by_start[occurence.start] = token
         return tokens_by_start
 
-    def _get_token_ends(self, idx: int, line: str) -> dict[int, tuple[int, TokenDict]]:
-        tokens_by_start: dict[int, tuple[int, TokenDict]] = {}
-        for token_dict in self.open_container_tokens:
-            token_name = token_dict["token"]
-            TokenType: type[ContainerToken] = Token.by_name(token_name)
-            if TokenType not in self.allowed_tokens:
+    def _get_token_ends(self, idx: int, line: str) -> dict[int, Token]:
+        tokens_by_start: dict[int, Token] = {}
+        for start_token in self.open_container_tokens:
+            token_name = start_token.name
+            Tok: type[ContainerToken] = Token.by_name(token_name)
+            if Tok not in self.allowed_tokens:
                 continue
-            result = TokenType.end(line)
+            result = Tok.end(idx, line)
             if result:
-                cid = token_dict["container_id"]
-                start, end, attrs = result
-                token: ContainerTokenDict = {"token": token_name, "container_id": cid, "start": False} | (attrs or {})
-                tokens_by_start[start] = end, token
+                cid = start_token.container_id
+                occurence, attrs = result
+                end_token = Tok(token_name, occurence, attrs, cid, False)
+                tokens_by_start[occurence.start] = end_token
         return tokens_by_start
     
-    def _add(self, thing: Token):
+    def _add(self, thing: Token, occurence: Occurence):
         if self.current_literal:
-            self.result.append({"token": "literal", "raw": self.current_literal})
+            attrs = {"raw": self.current_literal}
+            self.result.append(Literal("literal", occurence, attrs))
             self.current_literal = ""
         if thing is not None:
             self.result.append(thing)

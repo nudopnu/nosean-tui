@@ -2,10 +2,15 @@ import re
 import fnmatch
 from functools import cache
 from abc import ABC, abstractmethod
-from typing import TypeAlias
+from dataclasses import dataclass
 
 
-Occurence: TypeAlias = tuple[int, int, dict]
+@dataclass
+class Occurence:
+    line_idx: int
+    start: int
+    end: int
+
 
 class Token(ABC):
 
@@ -19,9 +24,15 @@ class Token(ABC):
     _token_registry: dict[str, type["Token"]] = {}
     """The registry of all tokens that get registered by the @token decorator"""
 
+    def __init__(self, name: str, occurence: Occurence, attributes: dict=None):
+        """When the start class method returns an Occurence, a Token instance will be created"""
+        self.name = name
+        self.occurence = occurence
+        self.attributes = attributes or {}
+
     @classmethod
     @abstractmethod
-    def start(cls, line: str) -> Occurence | None:
+    def start(cls, line_idx: int, line: str) -> tuple[Occurence, dict] | None:
         ...
     
     @classmethod
@@ -31,9 +42,9 @@ class Token(ABC):
     @classmethod
     @cache
     def by_pattern(cls, pattern: str):
-        if not pattern:
-            return []
         result: list[type[Token]] = []
+        if not pattern:
+            return result
         for key, TokenClass in cls._token_registry.items():
             if fnmatch.fnmatch(key, cls._allowed_inner_token):
                 result.append(TokenClass)
@@ -47,9 +58,14 @@ class Token(ABC):
 
 class ContainerToken(Token):
 
+    def __init__(self, name: str, occurence: Occurence, attributes: dict, container_id: str, is_start=True):
+        super().__init__(name, occurence, attributes)
+        self.container_id = container_id
+        self.is_start = is_start
+
     @classmethod
     @abstractmethod
-    def end(cls, line: str) -> tuple[int, int, dict] | None:
+    def end(cls, line_idx: int, line: str) -> tuple[Occurence, dict] | None:
         ...
 
 
@@ -64,6 +80,12 @@ def token(name: str, inner_tokens="*"):
 
     return cls_decorator
 
+@token("literal")
+class Literal(Token):
+
+    @classmethod
+    def start(cls, line_idx, line):
+        ...
 
 @token("heading")
 class Heading(Token):
@@ -71,7 +93,7 @@ class Heading(Token):
     pattern = re.compile(r"#{1,4}")
 
     @classmethod
-    def start(cls, line):
+    def start(cls, line_idx, line):
         match = cls.pattern.match(line)
         if match:
             start, end = match.span(0)
@@ -80,7 +102,7 @@ class Heading(Token):
                 "level": end - start,
                 "raw": line
             }
-            return 0, 0, attrs
+            return Occurence(line_idx, 0, 0), attrs
 
 
 @token("html")
@@ -90,30 +112,28 @@ class HtmlBlock(ContainerToken):
     end_pattern = re.compile(r"</(.*?)>")
     
     @classmethod
-    def start(cls, line):
+    def start(cls, line_idx, line):
         match = cls.start_pattern.search(line)
         if match:
             tagname = match.group(0)[1:-1]
             start, end = match.span(0)
-            raw = line[start:end]
             attrs = {
                 "tagname": tagname,
-                "raw": raw,
+                "raw": line[start:end],
             }
-            return start, end, attrs
+            return Occurence(line_idx, start, end), attrs
 
     @classmethod
-    def end(cls, line):
+    def end(cls, line_idx, line):
         match = cls.end_pattern.search(line)
         if match:
             tagname = match.group(0)[2:-1]
             start, end = match.span(0)
-            raw = line[start:end]
             attrs = {
                 "tagname": tagname,
-                "raw": raw,
+                "raw": line[start:end],
             }
-            return start, end, attrs
+            return Occurence(line_idx, start, end), attrs
 
 
 @token("code", inner_tokens="code")
@@ -123,7 +143,7 @@ class CodeStart(ContainerToken):
     end_pattern = re.compile(r"```.*")
 
     @classmethod
-    def start(cls, line):
+    def start(cls, line_idx, line):
         match = cls.start_pattern.match(line)
         if match:
             language = match.group(1)
@@ -131,11 +151,11 @@ class CodeStart(ContainerToken):
                 "language": language,
                 "raw": line,
             }
-            return 0, 0, attrs
+            return Occurence(line_idx, 0, 0), attrs
 
     @classmethod
-    def end(cls, line):
+    def end(cls, line_idx, line):
         match = cls.end_pattern.match(line)
         if match:
             attrs = {"raw": line}
-            return 0, 0, attrs
+            return Occurence(line_idx, 0, 0), attrs
