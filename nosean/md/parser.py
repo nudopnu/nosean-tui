@@ -1,6 +1,7 @@
 from pathlib import Path
 from functools import cache
 from typing import TypedDict
+from dataclasses import dataclass
 
 from .tokenizer import Tokenizer, Token, ContainerToken
 
@@ -8,10 +9,11 @@ class TokenNode(TypedDict):
     token: str
     children: list["TokenNode"]
 
-class KnowledgeItem(TypedDict):
+@dataclass
+class KnowledgeItem:
     title: str
     content: str
-    metadata: dict
+    path: str
 
 class Parser:
 

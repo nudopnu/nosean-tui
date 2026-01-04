@@ -28,11 +28,11 @@ class Tokenizer:
 
     def tok(self, text: str):
         self._setup()
-        lines = iter(text.splitlines())
-        line = next(lines)
+        lines = enumerate(text.splitlines())
+        idx, line = next(lines)
         while line is not None:
             stripped = line[self.offset:].rstrip()
-            tokens = self._get_token_starts(stripped) | self._get_token_ends(stripped)
+            tokens = self._get_token_starts(idx, stripped) | self._get_token_ends(idx, stripped)
             if tokens:
                 start = min(s for s in tokens)
                 end, token = tokens[start]
@@ -58,13 +58,13 @@ class Tokenizer:
             if self.offset:
                 continue
             try:
-                line = next(lines)
+                idx, line = next(lines)
             except StopIteration:
                 break
         self._add(None)
         return self.result
     
-    def _get_token_starts(self, line: str) -> dict[int, tuple[int, TokenDict]]:
+    def _get_token_starts(self, idx: int, line: str) -> dict[int, tuple[int, TokenDict]]:
         tokens_by_start: dict[int, tuple[int, dict]] = {}
         for Token in self.allowed_tokens:
             token_name = Token._token_name
@@ -78,7 +78,7 @@ class Tokenizer:
                 tokens_by_start[start] = end, token
         return tokens_by_start
 
-    def _get_token_ends(self, line: str) -> dict[int, tuple[int, TokenDict]]:
+    def _get_token_ends(self, idx: int, line: str) -> dict[int, tuple[int, TokenDict]]:
         tokens_by_start: dict[int, tuple[int, TokenDict]] = {}
         for token_dict in self.open_container_tokens:
             token_name = token_dict["token"]
