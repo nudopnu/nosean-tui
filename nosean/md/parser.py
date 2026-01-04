@@ -1,32 +1,33 @@
-import json
+from pathlib import Path
 from functools import cache
 from typing import TypedDict
 
-from .tokenizer import Tokenizer, TokenDict, ContainerTokenDict
+from .tokenizer import Tokenizer, Token, ContainerToken
 
-class TokenNodeDict(TypedDict):
+class TokenNode(TypedDict):
     token: str
-    children: list["TokenNodeDict"]
+    children: list["TokenNode"]
 
-class KnowledgeItemDict(TypedDict):
+class KnowledgeItem(TypedDict):
     title: str
     content: str
+    metadata: dict
 
 class Parser:
 
-    def __init__(self, tokens: list[TokenDict]):
+    def __init__(self, tokens: list[Token]):
         self.tokens = tokens
     
     @cache
     def ast(self):
-        root: TokenNodeDict = {"token": "root", "children": []}
+        root: TokenNode = {"token": "root", "children": []}
         parents = []
         tmp: list = root["children"]
         for tok in tokens:
             if "container_id" not in tok:
                 tmp.append(tok)
                 continue
-            tok: ContainerTokenDict = tok
+            tok: ContainerToken = tok
             if not tok["start"]:
                 tmp = parents.pop()
                 continue
@@ -41,12 +42,12 @@ class Parser:
     def knowledge_items(self):
         root = self.ast()
         path: list[str] = []
-        result: dict[str, KnowledgeItemDict] = {}
+        result: dict[str, KnowledgeItem] = {}
         
-        def is_node_tag(node: TokenNodeDict, tag: str):
+        def is_node_tag(node: TokenNode, tag: str):
             return node["token"] == "html" and node["tagname"] == tag
         
-        def get_raw(node: TokenNodeDict):
+        def get_raw(node: TokenNode):
             raw: str = node["raw"]
             if "children" not in node:
                 return raw
@@ -54,7 +55,7 @@ class Parser:
                 raw += get_raw(child)
             return raw
 
-        def traverse(token: TokenNodeDict):
+        def traverse(token: TokenNode):
             nonlocal path
             for child in token["children"]:
                 if child["token"] == "heading":
@@ -62,7 +63,6 @@ class Parser:
                     title = child["title"]
                     path = ["" if idx >= len(path) else path[idx] for idx in range(level + 1)]
                     path[level] = title
-                    print(path)
                 elif is_node_tag(child, "details"):
                     content = ""
                     title = "?"
@@ -88,8 +88,9 @@ abc
 
 # test
     """
-    # sample = Path("data/bash.md").read_text(encoding="utf8")
+    sample = Path("data/bash.md").read_text(encoding="utf8")
     tokens = Tokenizer().tok(sample)
     p = Parser(tokens)
     # print(json.dumps(p.ast()))
-    print(p.knowledge_items())
+    for title, content in p.knowledge_items().items():
+        print(title)

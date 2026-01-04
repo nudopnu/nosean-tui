@@ -12,7 +12,7 @@ class NotionVault:
         result: dict[str, Section] = {}
         for file in Path(self.path).glob("**/*.md"):
             parser = MarkdownParser(file)
-            result = parser.try_parse()
+            result = parser.parse()
             for k, v in result.items():
                 result[k] = v
         return result

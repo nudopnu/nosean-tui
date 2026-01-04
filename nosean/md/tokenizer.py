@@ -24,7 +24,7 @@ class Tokenizer:
         self.open_container_tokens: list[TokenDict] = []
         self.cid = 0
         self.offset = 0
-        self.current_literal: str = ""
+        self.current_literal = ""
 
     def tok(self, text: str):
         self._setup()
@@ -114,6 +114,7 @@ abc
 
 # test
     """
+    # from pathlib import Path
     # sample = Path("data/bash.md").read_text(encoding="utf8")
     tokens = Tokenizer().tok(sample)
     for tok in tokens:

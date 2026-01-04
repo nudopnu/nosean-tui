@@ -2,7 +2,10 @@ import re
 import fnmatch
 from functools import cache
 from abc import ABC, abstractmethod
+from typing import TypeAlias
 
+
+Occurence: TypeAlias = tuple[int, int, dict]
 
 class Token(ABC):
 
@@ -18,7 +21,7 @@ class Token(ABC):
 
     @classmethod
     @abstractmethod
-    def start(cls, line: str) -> tuple[int, int, dict] | None:
+    def start(cls, line: str) -> Occurence | None:
         ...
     
     @classmethod
@@ -52,11 +55,13 @@ class ContainerToken(Token):
 
 def token(name: str, inner_tokens="*"):
     """A decorator for classes derived from Token class to add to the registry"""
+
     def cls_decorator(cls: type[Token]):
         Token._token_registry[name] = cls
         cls._token_name = name
         cls._allowed_inner_token = inner_tokens
         return cls
+
     return cls_decorator
 
 
@@ -115,7 +120,7 @@ class HtmlBlock(ContainerToken):
 class CodeStart(ContainerToken):
 
     start_pattern = re.compile(r"```(.*)")
-    end_pattern = re.compile(r"```.?")
+    end_pattern = re.compile(r"```.*")
 
     @classmethod
     def start(cls, line):
