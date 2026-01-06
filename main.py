@@ -1,6 +1,7 @@
 import argparse
 
 from nosean.app import MyApp
+from nosean.app2 import AppTwo
 from nosean.notion import NotionVault
 from nosean.vault import Entry
 
@@ -16,5 +17,6 @@ if __name__ == "__main__":
     vault = NotionVault(path=args.vault_path)
     entries = vault.get_entries()
     entries = [Entry(name, value["body"], {}) for name, value in entries.items()]
-    app = MyApp(entries=entries)
+    # app = MyApp(entries=entries)
+    app = AppTwo()
     app.run()

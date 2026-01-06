@@ -4,6 +4,7 @@ from typing import TypedDict
 from dataclasses import dataclass, field
 
 from .tokenizer import Tokenizer, Token, ContainerToken
+from .token import Heading, Literal
 
 @dataclass
 class TokenNode:
@@ -90,9 +91,33 @@ abc
 
 # test
     """
-    sample = Path("data/python.md").read_text(encoding="utf8")
+    sample = Path("data/schematherapie.md").read_text(encoding="utf8")
     tokens = Tokenizer().tok(sample)
     p = Parser(tokens)
-    # print(json.dumps(p.ast()))
-    for title, item in p.knowledge_items().items():
-        print(f"{item.path:<30}: {title}")
+    import json
+    tree = p.ast()
+    path = {}
+    current = {}
+
+    def traverse(node: TokenNode):
+        global current
+        match token := node.token:
+            case Heading(attributes=attributes):
+                level = attributes["level"]
+                title = attributes["title"]
+                path[level] = title
+                path_str = ".".join(path[i] if i in path else "" for i in range(max(path)))
+                current = {
+                    "path": path_str,
+                    "name": title,
+                }
+            case Literal():
+                current["content"] = token.attributes["raw"]
+                print(current)
+            case _:
+                current = {}
+        for child in node.children:
+            traverse(child)
+
+    traverse(tree)
+    # for title, item in p.knowledge_items().items(): print(f"{item.path:<30}: {title}")
